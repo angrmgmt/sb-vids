@@ -2,7 +2,6 @@
 ; https://jrsoftware.org/isinfo.php
 
 #define MyAppName "Cliparino"
-#define MyAppVersion "2.1.0 "
 #define MyAppPublisher "angrmgmt"
 #define MyAppURL "https://github.com/angrmgmt/Cliparino"
 #define MyAppExeName "Cliparino.Core.exe"

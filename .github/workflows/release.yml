@@ -26,24 +26,27 @@ jobs:
     - name: Extract version from tag
       id: version
       shell: bash
-      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-    - name: Update version in project file
-      shell: pwsh
       run: |
-        $version = "${{ steps.version.outputs.VERSION }}"
-        $csproj = "src/Cliparino.Core/Cliparino.Core.csproj"
-        $content = Get-Content $csproj -Raw
-        $content = $content -replace '<Version>.*?</Version>', "<Version>$version</Version>"
-        $content = $content -replace '<AssemblyVersion>.*?</AssemblyVersion>', "<AssemblyVersion>$version.0</AssemblyVersion>"
-        $content = $content -replace '<FileVersion>.*?</FileVersion>', "<FileVersion>$version.0</FileVersion>"
-        Set-Content $csproj $content
+        version="${GITHUB_REF#refs/tags/v}"
+        version_core="${version%%-*}"
+
+        if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+          echo "Invalid version tag: v$version"
+          exit 1
+        fi
+
+        echo "VERSION=$version" >> "$GITHUB_OUTPUT"
+        echo "VERSION_CORE=$version_core" >> "$GITHUB_OUTPUT"
 
     - name: Restore dependencies
       run: dotnet restore Cliparino.sln
 
     - name: Build solution
-      run: dotnet build Cliparino.sln --configuration Release --no-restore
+      run: >-
+        dotnet build Cliparino.sln --configuration Release --no-restore
+        -p:Version=${{ steps.version.outputs.VERSION }}
+        -p:AssemblyVersion=${{ steps.version.outputs.VERSION_CORE }}.0
+        -p:FileVersion=${{ steps.version.outputs.VERSION_CORE }}.0
 
     - name: Run tests
       run: dotnet test Cliparino.sln --configuration Release --no-build --verbosity normal
@@ -52,7 +55,15 @@ jobs:
       run: dotnet restore src/Cliparino.Core/Cliparino.Core.csproj --runtime win-x64
 
     - name: Publish self-contained application
-      run: dotnet publish src/Cliparino.Core/Cliparino.Core.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output src/Cliparino.Core/bin/Release/net8.0-windows/win-x64/publish
+      run: >-
+        dotnet publish src/Cliparino.Core/Cliparino.Core.csproj --configuration Release
+        --runtime win-x64 --self-contained true
+        -p:PublishSingleFile=true
+        -p:IncludeNativeLibrariesForSelfExtract=true
+        -p:Version=${{ steps.version.outputs.VERSION }}
+        -p:AssemblyVersion=${{ steps.version.outputs.VERSION_CORE }}.0
+        -p:FileVersion=${{ steps.version.outputs.VERSION_CORE }}.0
+        --output src/Cliparino.Core/bin/Release/net8.0-windows/win-x64/publish
 
     - name: Verify publish output
       shell: pwsh
@@ -94,19 +105,12 @@ jobs:
         choco install innosetup --yes --no-progress
         echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
 
-    - name: Update installer version
-      shell: pwsh
-      run: |
-        $version = "${{ steps.version.outputs.VERSION }}"
-        $issFile = "installer/Cliparino.iss"
-        $content = Get-Content $issFile -Raw
-        $content = $content -replace '#define MyAppVersion ".*?"', "#define MyAppVersion `"$version`""
-        Set-Content $issFile $content
-
     - name: Compile installer
       shell: pwsh
       run: |
-        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer/Cliparino.iss"
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+          "/DMyAppVersion=${{ steps.version.outputs.VERSION }}" `
+          "installer/Cliparino.iss"
 
     - name: List output directory
       shell: pwsh
